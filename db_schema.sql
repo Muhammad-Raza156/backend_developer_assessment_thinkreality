@@ -42,7 +42,7 @@ CREATE TABLE owners (
 -- Table: ownership_history
 -- This schema is derived from the columns in the INSERT statement.
 CREATE TABLE ownership_history (
-    history_id INT PRIMARY KEY,
+    history_id SERIAL PRIMARY KEY,
     unit_id UUID NOT NULL,
     owner_id UUID NOT NULL,
     ownership_start_date DATE NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE ownership_history (
 -- Table: ownership_transfers
 -- This schema is derived from the columns in the INSERT statement.
 CREATE TABLE ownership_transfers (
-    transfer_id INT PRIMARY KEY,
+    transfer_id  SERIAL PRIMARY KEY,
     unit_id UUID NOT NULL,
     transfer_type VARCHAR NOT NULL,
     transfer_date DATE NOT NULL,
@@ -82,7 +82,7 @@ CREATE TABLE ownership_transfers (
 -- Table: transfer_documents
 -- This schema is derived from the columns in the INSERT statement.
 CREATE TABLE transfer_documents (
-    document_id INT PRIMARY KEY,
+    document_id SERIAL PRIMARY KEY,
     transfer_id INT NOT NULL,
     document_type VARCHAR,
     document_name VARCHAR,
@@ -97,7 +97,7 @@ CREATE TABLE transfer_documents (
 -- Table: audit_logs
 -- This schema is derived from the columns in the INSERT statement.
 CREATE TABLE audit_logs (
-    log_id INT PRIMARY KEY,
+    log_id SERIAL PRIMARY KEY,
     table_name VARCHAR,
     record_id VARCHAR,
     action VARCHAR,
