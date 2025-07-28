@@ -53,11 +53,11 @@ async def initiate_transfer(
     """
     try:
         result = await process_transfer(payload, db, redis)
-        return {"status": "success", "transfer_id": result}
+        return {"status": "success", "transfer": result}
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An Internal Server Error Occurred")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.get("/owners/{owner_id}/portfolio")
 async def get_owner_portfolio(

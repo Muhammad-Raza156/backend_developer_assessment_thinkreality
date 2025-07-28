@@ -1,13 +1,22 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, HttpUrl
 from typing import List, Optional, Literal
 from datetime import date
 from uuid import UUID
+
+
+class DocumentInfo(BaseModel):
+    document_type: str
+    document_name: str
+    file_path: HttpUrl
+    upload_date: Optional[date] = None
+    uploaded_by: Optional[str] = None
+    verification_status: Optional[str] = "pending"
 
 class OwnerData(BaseModel):
     full_name: str
     emirates_id: str = Field(
         ...,
-        pattern=r"^\d{3}-\d{4}-\d{7}-\d{1}$",
+        pattern=r"^784-[0-9]{4}-[0-9]{7}-[0-9]{1}$",
         description="Emirates ID in the format XXX-XXXX-XXXXXXX-X",
     )
     phone: str
@@ -39,7 +48,7 @@ class TransferRequest(BaseModel):
     transfer_date: date
     purchase_price: float= Field(..., gt=0)
     legal_reason: str
-    documents: List[str]
+    documents: List[DocumentInfo]
 
     @model_validator(mode="after")
     def check_percentages_balance(self) -> "TransferRequest":

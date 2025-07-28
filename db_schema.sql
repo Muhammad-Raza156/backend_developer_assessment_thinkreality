@@ -33,7 +33,7 @@ CREATE TABLE owners (
     preferred_contact_method VARCHAR,
     communication_language VARCHAR,
     is_active BOOLEAN NOT NULL,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
     CONSTRAINT check_owner_type CHECK (owner_type IN ('individual', 'corporate')),
     CONSTRAINT check_individual_owner_eid CHECK (NOT (owner_type = 'individual' AND emirates_id IS NULL)),
     CONSTRAINT check_emirates_id_format CHECK (emirates_id IS NULL OR emirates_id ~ '^784-[0-9]{4}-[0-9]{7}-[0-9]{1}$')
@@ -56,7 +56,7 @@ CREATE TABLE ownership_history (
     registration_number VARCHAR,
     transaction_type VARCHAR,
     transfer_reason VARCHAR,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
     CONSTRAINT fk_ownership_history_unit FOREIGN KEY(unit_id) REFERENCES units(unit_id),
     CONSTRAINT fk_ownership_history_owner FOREIGN KEY(owner_id) REFERENCES owners(owner_id),
     CONSTRAINT ownership_percentage_check CHECK (ownership_percentage > 0 AND ownership_percentage <= 100)
@@ -74,7 +74,7 @@ CREATE TABLE ownership_transfers (
     legal_reason VARCHAR,
     status VARCHAR,
     initiated_by VARCHAR,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
     CONSTRAINT fk_ownership_transfers_unit FOREIGN KEY(unit_id) REFERENCES units(unit_id),
     CONSTRAINT transfer_date_not_in_future_check CHECK (transfer_date <= now())
 );
@@ -90,7 +90,7 @@ CREATE TABLE transfer_documents (
     upload_date DATE,
     uploaded_by VARCHAR,
     verification_status VARCHAR,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
     CONSTRAINT fk_transfer_documents_transfer FOREIGN KEY(transfer_id) REFERENCES ownership_transfers(transfer_id)
 );
 
@@ -107,7 +107,7 @@ CREATE TABLE audit_logs (
     change_reason VARCHAR,
     ip_address VARCHAR,
     user_agent VARCHAR,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
 -- Indexes for performance

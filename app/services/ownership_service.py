@@ -58,9 +58,17 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unit not found")
         # Get current ownership state from the database
         stmt = select(OwnershipHistory).where(
-            and_(OwnershipHistory.unit_id == payload.unit_id, OwnershipHistory.to_date.is_(None))
+            and_(OwnershipHistory.unit_id == payload.unit_id, OwnershipHistory.ownership_end_date.is_(None))
         )
-        current_ownership_records = (await db.execute(stmt)).scalars().all()
+        current_ownership_records = await db.execute(stmt)
+        current_ownership_records = current_ownership_records.scalars().all()
+        print(len(current_ownership_records))
+        print(current_ownership_records[0].owner_id, current_ownership_records[0].ownership_percentage)
+        print(current_ownership_records[1].owner_id, current_ownership_records[1].ownership_percentage)
+
+        if not current_ownership_records:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Current ownership for{payload.unit_id}  not found")
+        
 
         db_ownerships = {record.owner_id: record.ownership_percentage for record in current_ownership_records}
 
@@ -74,111 +82,121 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
         # Transactional Update Phase
         final_ownerships = db_ownerships.copy()
 
+
         # process sellers
         for seller in payload.current_owners:
             final_ownerships[seller.owner_id] -= seller.transfer_percentage
-
-        new_owner_map = {} # Maps EID to Owner object
-        for buyer_info in payload.new_owners:
-            owner_result = await db.execute(select(Owner).where(Owner.emirates_id == buyer_info.emirates_id))
-            owner = owner_result.scalar_one_or_none()
-            if not owner:
-                owner = Owner(
-                    full_name=buyer_info.full_name,
-                    emirates_id=buyer_info.emirates_id,
-                    phone=buyer_info.phone,
-                    owner_type=buyer_info.owner_type
-                )
-                db.add(owner)
-                await db.flush()
-            new_owner_map[buyer_info.emirates_id] = owner
-            final_ownerships[owner.owner_id] = final_ownerships.get(owner.owner_id, 0) + buyer_info.ownership_percentage
         
-        # Filter out any owners with 0% share
-        final_ownerships = {owner_id: pct for owner_id, pct in final_ownerships.items() if pct > 1e-9}
-        # Final check: Ensure the new total ownership is 100%
-        if abs(sum(final_ownerships.values()) - 100.0) > 1e-9:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ownership transfer would result in a gap or overlap. Total must be 100%.")
-        # 3. --- Database Record Creation ---
 
-        # Expire old ownership records
-        for record in current_ownership_records:
-            record.to_date = func.now()
-            db.add(record)
-        
-        # Create new ownersip records
-        for owner_id, pct in final_ownerships.items():
-            new_history = OwnershipHistory(
-                unit_id=payload.unit_id,
-                owner_id=owner_id,
-                ownership_percentage=pct,
-                from_date=func.now()
-            )
-            db.add(new_history)
+        # process buyers
+        buyer_ownerships = {}
+        for buyer in payload.new_owners:
+            emirates_id = buyer.emirates_id
+            buyer_ownerships[f"{emirates_id}"] = buyer.ownership_percentage
 
-        # Create Audit Trail
-        first_transfer_id = None
-        for seller in payload.current_owners:
-            for buyer in payload.new_owners:
-                buyer_owner_id = await db.execute(select(Owner.owner_id).where(Owner.emirates_id == buyer.emirates_id))
-                new_transfer = OwnershipTransfer(
-                    unit_id=payload.unit_id,
-                    transfer_type=payload.transfer_type,
-                    current_owner_id=seller.owner_id,
-                    new_owner_id=buyer_owner_id.scalar_one(),
-                    transfer_share=seller.transfer_percentage,
-                    transfer_date=payload.transfer_date,
-                    purchase_price=payload.purchase_price,
-                    legal_reason=payload.legal_reason
-                )
-                db.add(new_transfer)
-                await db.flush()
-                if not first_transfer_id:
-                    first_transfer_id = new_transfer.id
+        # calculate sum of  percentages  final ownerships and buyer ownerships and it shall be equal to 100.0 if not then raise error for gap 
 
-                # Add documents for this transfer
-                for doc_meta in payload.documents:
-                    db.add(TransferDocument(transfer_id=new_transfer.id, details={"document_url": doc_meta}))
-        
-        # Create a single, comprehensive audit log entry
-        audit = AuditLog(
-            action="ownership_transfer_initiated",
-            description=f"Ownership transfer for unit {payload.unit_id} of type '{payload.transfer_type}'.",
-            actor_id=payload.current_owners[0].owner_id,
-            target_id=payload.unit_id,
-            details=json.loads(payload.model_dump_json(exclude={'documents'}))
+        total_final_ownerships = sum(final_ownerships.values())+sum(buyer_ownerships.values())
+        if abs(total_final_ownerships - 100) > 1e-9:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, 
+                                detail="Ownership percentages do not add up to 100%")
+
+
+        transfer_record = OwnershipTransfer(
+            transfer_id=5,
+            unit_id=payload.unit_id,
+            transfer_type=payload.transfer_type,
+            transfer_date=payload.transfer_date,
+            total_amount=payload.purchase_price,
+            transfer_currency="AED",
+            legal_reason=payload.legal_reason,
+            status="pending",
+            initiated_by="system",
         )
-        db.add(audit)
+        db.add(transfer_record)
+        db.flush()
 
-        # --- Prepare data for caching before the transaction commits ---
-        all_final_owner_ids = list(final_ownerships.keys())
-        if all_final_owner_ids:
-            owners_result = await db.execute(
-                select(Owner).where(Owner.owner_id.in_(all_final_owner_ids))
+        transfer_documents=[]
+        for doc in payload.documents:
+            transfer_document = TransferDocument(
+                document_id=9,
+                transfer_id=transfer_record.transfer_id,
+                document_type=doc.document_type,
+                document_name=doc.document_name,
+                file_path=str(doc.file_path),
+                upload_date=doc.upload_date,
+                uploaded_by=doc.uploaded_by,
+                verification_status=doc.verification_status
             )
-            owners = owners_result.scalars().all()
-            owner_map = {owner.owner_id: owner for owner in owners}
+            db.add(transfer_document)
+            db.flush()
+            transfer_documents.append(transfer_document)
 
-            cache_data = []
-            for owner_id, percentage in final_ownerships.items():
-                owner = owner_map.get(owner_id)
-                if owner:
-                    cache_data.append({
-                        "owner_id": str(owner.owner_id),
-                        "full_name": owner.full_name,
-                        "emirates_id": owner.emirates_id,
-                        "percentage": percentage,
-                    })
-            serialized_cache_data = json.dumps(cache_data)
-        else:
-            serialized_cache_data = "[]"
+        # fetch transfer id for the transfer record added to database
+        transfer_id = transfer_record.transfer_id
+
+        payload_values=payload.dict()
+        new_values={}
+        new_values['unit_id']=str(payload_values['unit_id'])
+        new_values['transfer_type']=payload_values['transfer_type']
+        new_values['total_amount']=payload_values['purchase_price']
+        new_values['transfer_currency']='AED'
+        new_values['legal_reason']=payload_values['legal_reason']
+        new_values['status']='pending'
+        new_values['initiated_by']='system'
+        new_values['sellers']=final_ownerships
+        new_values['buyers']=buyer_ownerships
+
+        # audit log record added
+        audit_log = AuditLog(
+            log_id=8,
+            table_name="ownership_transfers",
+            record_id=str(transfer_id),
+            action="INSERT",
+            old_values=None,
+            new_values=None,
+            changed_by="system",
+            change_reason="Ownership transfer initiated",
+            ip_address="127.0.0.1",
+            user_agent="system"
+        )
+        db.add(audit_log)
+        db.flush()
+        # --- Prepare data for caching before the transaction commits ---
+        cache_record ={
+            "transfer_id": transfer_id,
+            "unit_id": str(payload.unit_id),
+            "transfer_type": payload.transfer_type,
+            "total_amount": payload.purchase_price,
+            "transfer_currency": "AED",
+            "legal_reason": payload.legal_reason,
+            "status": "pending",
+            "initiated_by": "system",
+            "sellers": final_ownerships,
+            "buyers": buyer_ownerships,
+            "documents": transfer_documents,
+            "audit_log": {
+                "log_id": audit_log.log_id,
+                "table_name": audit_log.table_name,
+                "record_id": audit_log.record_id,
+                "action": audit_log.action,
+                "old_values": audit_log.old_values,
+                "new_values": audit_log.new_values,
+                "changed_by": audit_log.changed_by,
+                "change_reason": audit_log.change_reason,
+                "ip_address": audit_log.ip_address,
+                "user_agent": audit_log.user_agent,
+                "created_at": audit_log.created_at
+            }
+        }
+        #serialized_cache_data = json.dumps(cache_record)
         
     # 4. --- Cache Storage ---
     try:
-        cache_key = f"ownership:unit:{payload.unit_id}"
-        await redis.set(cache_key, serialized_cache_data, ex=3600)  # Cache for 1 hour
+        cache_key = f"ownership_transfer:unit:{payload.unit_id}"
+        await redis.set(cache_key, cache_record, ex=3600)  # Cache for 1 hour
         logger.info(f"Ownership data for unit {payload.unit_id} cached successfully.")
     except Exception as e:
         # Log cache error but don't fail the request, as the DB is the source of truth
         logger.error(f"Failed to cache ownership data for unit {payload.unit_id}: {e}")
-    return str(first_transfer_id)
+    return cache_record
