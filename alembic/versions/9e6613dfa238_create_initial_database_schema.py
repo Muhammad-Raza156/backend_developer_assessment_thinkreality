@@ -62,14 +62,14 @@ def upgrade() -> None:
     )
     
     op.create_table('ownership_history',
-    sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+    sa.Column('history_id', sa.Integer(), nullable=False),
     sa.Column('unit_id', postgresql.UUID(as_uuid=True), nullable=False),
     sa.Column('owner_id', postgresql.UUID(as_uuid=True), nullable=False),
     sa.Column('ownership_start_date', sa.DATE(), nullable=False),
     sa.Column('ownership_end_date', sa.DATE(), nullable=True),
-    sa.Column('ownership_percentage', sa.FLOAT(), nullable=False),
+    sa.Column('ownership_percentage', sa.Float(), nullable=False),
     sa.Column('is_current_owner', sa.Boolean(), server_default=sa.text('false'), nullable=False),
-    sa.Column('purchase_price', sa.FLOAT(), nullable=True),
+    sa.Column('purchase_price', sa.Float(), nullable=True),
     sa.Column('purchase_currency', sa.String(length=3), nullable=True),
     sa.Column('financing_type', sa.String(), nullable=True),
     sa.Column('title_deed_number', sa.String(), nullable=True),
@@ -80,15 +80,15 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['owner_id'], ['owners.owner_id'], ),
     sa.ForeignKeyConstraint(['unit_id'], ['units.unit_id'], ),
     sa.CheckConstraint('ownership_percentage > 0 AND ownership_percentage <= 100', name='ownership_percentage_check'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('history_id')
     )
     
     op.create_table('ownership_transfers',
-    sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+    sa.Column('transfer_id', sa.Integer(), nullable=False),
     sa.Column('unit_id', postgresql.UUID(as_uuid=True), nullable=False),
     sa.Column('transfer_type', sa.String(), nullable=False),
     sa.Column('transfer_date', sa.DATE(), nullable=False),
-    sa.Column('total_amount', sa.FLOAT(), nullable=True),
+    sa.Column('total_amount', sa.Float(), nullable=True),
     sa.Column('transfer_currency', sa.String(length=3), nullable=True),
     sa.Column('legal_reason', sa.String(), nullable=True),
     sa.Column('status', sa.String(), nullable=True),
@@ -96,12 +96,12 @@ def upgrade() -> None:
     sa.Column('created_at', sa.TIMESTAMP(), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['unit_id'], ['units.unit_id'], ),
     sa.CheckConstraint('transfer_date <= now()', name='transfer_date_not_in_future_check'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('transfer_id')
     )
     
     op.create_table('transfer_documents',
-    sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-    sa.Column('transfer_id', postgresql.UUID(as_uuid=True), nullable=False),
+    sa.Column('document_id', sa.Integer(), nullable=False),
+    sa.Column('transfer_id', sa.Integer(), nullable=False),
     sa.Column('document_type', sa.String(), nullable=True),
     sa.Column('document_name', sa.String(), nullable=True),
     sa.Column('file_path', sa.String(), nullable=True),
@@ -109,12 +109,12 @@ def upgrade() -> None:
     sa.Column('uploaded_by', sa.String(), nullable=True),
     sa.Column('verification_status', sa.String(), nullable=True),
     sa.Column('created_at', sa.TIMESTAMP(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['transfer_id'], ['ownership_transfers.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.ForeignKeyConstraint(['transfer_id'], ['ownership_transfers.transfer_id'], ),
+    sa.PrimaryKeyConstraint('document_id')
     )
     
     op.create_table('audit_logs',
-    sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+    sa.Column('log_id', sa.Integer(), nullable=False),
     sa.Column('table_name', sa.String(), nullable=True),
     sa.Column('record_id', sa.String(), nullable=True),
     sa.Column('action', sa.String(), nullable=True),
@@ -125,7 +125,7 @@ def upgrade() -> None:
     sa.Column('ip_address', sa.String(), nullable=True),
     sa.Column('user_agent', sa.String(), nullable=True),
     sa.Column('created_at', sa.TIMESTAMP(), server_default=sa.text('now()'), nullable=False),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('log_id')
     )
     
     # Create indexes
