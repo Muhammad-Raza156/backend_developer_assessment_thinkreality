@@ -68,7 +68,7 @@ class TransferRequest(BaseModel):
     
 class ValidationRequest(BaseModel):
     unit_id: UUID
-    transfer_id: open[UUID]=None
+    transfer_id: Optional[UUID]=None
 
 class InheritanceRequest(BaseModel):
     unit_id: UUID
