@@ -16,4 +16,5 @@ class JointOwnershipManager:
 
     async def redistribute_ownership(self, unit_id: UUID, new_distribution: Dict[UUID, float]) -> TransferResult:
         # Logic: Remove existing entries, insert new ones based on percentages
+        
         return TransferResult("Ownership redistributed successfully")

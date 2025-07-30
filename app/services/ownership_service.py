@@ -3,7 +3,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import and_,func
+from sqlalchemy import and_,func, or_
 from redis.asyncio import Redis
 import json
 
@@ -51,6 +51,15 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
     """
     #Validate IDs, percentages, existing ownerships, documents
     async with db.begin():
+        # check
+        stmt=select(OwnershipTransfer).where(
+            and_(OwnershipTransfer.unit_id==payload.unit_id, 
+                 or_(OwnershipTransfer.status=="pending", OwnershipTransfer.status=="in_progress")))
+        conflict_transfer=await db.execute(stmt)
+        conflict_transfer=conflict_transfer.scalar_one_or_none
+        if conflict_transfer:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Transfer for this property is already in process")
+        
         # Check if the unit exists
         unit_result= await db.execute(select(Unit).where(Unit.unit_id == payload.unit_id))
         unit = unit_result.scalar_one_or_none()
@@ -92,7 +101,11 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
         buyer_ownerships = {}
         for buyer in payload.new_owners:
             emirates_id = buyer.emirates_id
-            buyer_ownerships[f"{emirates_id}"] = buyer.ownership_percentage
+            stmt=select(Owner.owner_id).where(Owner.emirates_id==emirates_id)
+            buyer_id=await db.execute(stmt)
+            buyer_owner_id=buyer_id.scalar_one_or_none()
+            
+            buyer_ownerships[f"{buyer_owner_id}"] = buyer.ownership_percentage
 
         # calculate sum of  percentages  final ownerships and buyer ownerships and it shall be equal to 100.0 if not then raise error for gap 
 
@@ -101,9 +114,7 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, 
                                 detail="Ownership percentages do not add up to 100%")
 
-
         transfer_record = OwnershipTransfer(
-            transfer_id=5,
             unit_id=payload.unit_id,
             transfer_type=payload.transfer_type,
             transfer_date=payload.transfer_date,
@@ -119,7 +130,6 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
         transfer_documents=[]
         for doc in payload.documents:
             transfer_document = TransferDocument(
-                document_id=9,
                 transfer_id=transfer_record.transfer_id,
                 document_type=doc.document_type,
                 document_name=doc.document_name,
@@ -132,29 +142,29 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
             db.flush()
             transfer_documents.append(transfer_document)
 
+
         # fetch transfer id for the transfer record added to database
         transfer_id = transfer_record.transfer_id
 
         payload_values=payload.dict()
         new_values={}
-        new_values['unit_id']=str(payload_values['unit_id'])
-        new_values['transfer_type']=payload_values['transfer_type']
-        new_values['total_amount']=payload_values['purchase_price']
-        new_values['transfer_currency']='AED'
-        new_values['legal_reason']=payload_values['legal_reason']
-        new_values['status']='pending'
-        new_values['initiated_by']='system'
-        new_values['sellers']=final_ownerships
-        new_values['buyers']=buyer_ownerships
+        for key, value in payload_values.items():
+            if key =='sellers':
+                new_values[key]=final_ownerships
+            elif key=='buyers':
+                new_values[key]=buyer_ownerships
+            else:
+                new_values[key]=str(value)
+        print(new_values)
+
 
         # audit log record added
         audit_log = AuditLog(
-            log_id=8,
             table_name="ownership_transfers",
             record_id=str(transfer_id),
             action="INSERT",
             old_values=None,
-            new_values=None,
+            new_values=new_values,
             changed_by="system",
             change_reason="Ownership transfer initiated",
             ip_address="127.0.0.1",
@@ -198,5 +208,6 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
         logger.info(f"Ownership data for unit {payload.unit_id} cached successfully.")
     except Exception as e:
         # Log cache error but don't fail the request, as the DB is the source of truth
+        print(f"An error occurred while caching ownership data: {str(e)}")
         logger.error(f"Failed to cache ownership data for unit {payload.unit_id}: {e}")
     return cache_record

@@ -2,11 +2,11 @@ from typing import List, Dict, Any
 from uuid import UUID
 
 class InheritanceHandler:
-    def validate_heirs(self, deceased_owner_id: UUID, heirs: List[Dict[str, Any]]) -> bool:
+    async def validate_heirs(self, deceased_owner_id: UUID, heirs: List[Dict[str, Any]]) -> bool:
         # Placeholder logic: Confirm heir relationships (e.g., from a mock relationship DB)
         return True
 
-    def calculate_islamic_distribution(self, deceased_owner_id: UUID, heirs: List[Dict[str, Any]]) -> Dict[str, int]:
+    async def calculate_islamic_distribution(self, deceased_owner_id: UUID, heirs: List[Dict[str, Any]]) -> Dict[str, int]:
         no_of_wives=0
         no_of_daughters=0
         no_of_sons=0
@@ -25,7 +25,7 @@ class InheritanceHandler:
             "number_of_sons": no_of_sons
             }
 
-    def handle_inheritance_transfer(self, unit_id: UUID, deceased_owner_id: UUID,ownership_percentage: float, heirs: List[Dict[str, Any]]):
+    async def handle_inheritance_transfer(self, unit_id: UUID, deceased_owner_id: UUID,ownership_percentage: float, heirs: List[Dict[str, Any]]):
         if not self.validate_heirs(deceased_owner_id, heirs):
             raise ValueError("Invalid heir relationship")
         
