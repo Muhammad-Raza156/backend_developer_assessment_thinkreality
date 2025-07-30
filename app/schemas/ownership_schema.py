@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator, HttpUrl
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 from datetime import date
 from uuid import UUID
 
@@ -69,3 +69,13 @@ class TransferRequest(BaseModel):
 class ValidationRequest(BaseModel):
     unit_id: UUID
     transfer_id: open[UUID]=None
+
+class InheritanceRequest(BaseModel):
+    unit_id: UUID
+    deceased_owner_id: UUID
+    transfer_type: str = "inheritance"
+    ownership_percentage: float
+    heirs: Dict[str, str]
+    transfer_date: date
+    legal_reason: str
+    documents: List[DocumentInfo]

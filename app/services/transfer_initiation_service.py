@@ -2,7 +2,6 @@ import logging
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy import and_,func, or_
 from redis.asyncio import Redis
 import json
@@ -173,41 +172,35 @@ async def process_transfer(payload: TransferRequest, db: AsyncSession, redis: Re
         db.add(audit_log)
         db.flush()
         # --- Prepare data for caching before the transaction commits ---
-        cache_record ={
+        # Ensure all data is serializable for Redis
+        cache_record = {
             "transfer_id": transfer_id,
             "unit_id": str(payload.unit_id),
             "transfer_type": payload.transfer_type,
+            "transfer_date": payload.transfer_date.isoformat(),
             "total_amount": payload.purchase_price,
             "transfer_currency": "AED",
             "legal_reason": payload.legal_reason,
             "status": "pending",
             "initiated_by": "system",
-            "sellers": final_ownerships,
-            "buyers": buyer_ownerships,
-            "documents": transfer_documents,
-            "audit_log": {
-                "log_id": audit_log.log_id,
-                "table_name": audit_log.table_name,
-                "record_id": audit_log.record_id,
-                "action": audit_log.action,
-                "old_values": audit_log.old_values,
-                "new_values": audit_log.new_values,
-                "changed_by": audit_log.changed_by,
-                "change_reason": audit_log.change_reason,
-                "ip_address": audit_log.ip_address,
-                "user_agent": audit_log.user_agent,
-                "created_at": audit_log.created_at
-            }
+            # Storing remaining percentages for sellers
+            "sellers": {str(owner_id): pct for owner_id, pct in final_ownerships.items()},
+            # Storing new percentages for buyers
+            "buyers": {str(owner_id): pct for owner_id, pct in buyer_ownerships.items()},
         }
-        #serialized_cache_data = json.dumps(cache_record)
+        serialized_cache_data = json.dumps(cache_record)
         
     # 4. --- Cache Storage ---
     try:
         cache_key = f"ownership_transfer:unit:{payload.unit_id}"
-        await redis.set(cache_key, cache_record, ex=3600)  # Cache for 1 hour
+        # The response from this function is built from the cache_record, so we add the full details back
+        cache_record["documents"] = {str(doc.document_name): str(doc.file_path) for doc in transfer_documents}
+        cache_record["audit_log_id"] = audit_log.log_id
+        await redis.set(cache_key, serialized_cache_data, ex=3600)  # Cache for 1 hour
         logger.info(f"Ownership data for unit {payload.unit_id} cached successfully.")
     except Exception as e:
         # Log cache error but don't fail the request, as the DB is the source of truth
         print(f"An error occurred while caching ownership data: {str(e)}")
         logger.error(f"Failed to cache ownership data for unit {payload.unit_id}: {e}")
+    db.commit()
     return cache_record

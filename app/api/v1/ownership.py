@@ -3,10 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 from app.db.database import get_db
 from app.core.redis_client import get_redis
-from app.schemas.ownership_schema import TransferRequest, ValidationRequest
-from app.services.ownership_service import process_transfer
+from app.schemas.ownership_schema import TransferRequest, ValidationRequest, InheritanceRequest
+from app.services.transfer_initiation_service import process_transfer
 from app.services.portfolio_service import get_portfolio_data
 from app.services.validation_service import transfer_validation
+from app.services.initiate_inheritance_service import inheritance_distribution
 from fastapi import Query
 from uuid import UUID
 from datetime import date 
@@ -64,6 +65,55 @@ async def initiate_transfer(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
                             detail=str(e))
 
+@router.post("/ownership/transfers/inheritance-distribution")
+async def initiate_inheritance_distribution(
+    payload: InheritanceRequest,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """
+    Initiates an ownership transfer for a property based on inheritance.
+
+    This endpoint handles the process of transferring a deceased owner's share
+    of a property to their legal heirs. It takes details about the deceased
+    owner, the property unit, the heirs, and supporting legal documents.
+
+    The service layer will then process this request, which may involve
+    calculating share distribution, creating a new ownership transfer record,
+    and logging all associated documents for future validation.
+
+    Args:
+        payload (InheritanceRequest): The inheritance request details, including
+            the unit ID, deceased owner's ID, a dictionary of heirs and their
+            relationships, and supporting legal documents.
+        db (AsyncSession, optional): The database session dependency.
+            Defaults to Depends(get_db).
+        redis (Redis, optional): The Redis client dependency for caching.
+            Defaults to Depends(get_redis).
+
+    Raises:
+        HTTPException: 404 NOT FOUND if the deceased owner is not found.
+        HTTPException: 500 INTERNAL SERVER_ERROR for any other unexpected errors.
+
+    Returns:
+        dict: A dictionary with a "status" of "success" and the "transfer" details.
+    """
+    try:
+        result = await inheritance_distribution(payload, db, redis)
+        return {
+            "status": "success", 
+            "transfer": result
+            }
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                             detail=str(e))
+
+
+    
+
+
 @router.get("/owners/{owner_id}/portfolio")
 async def get_owner_portfolio(
     owner_id: UUID, 
@@ -120,13 +170,42 @@ async def get_owner_portfolio(
                              detail=str(e))
     
 
-
-@router.post("/ownership/transfers/validate")
+@router.post("/ownership/validate-transfer")
 async def validate_transfer(
     payload: ValidationRequest,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis)
 ):
+    """
+    Validates the documents associated with an ongoing ownership transfer.
+
+    This endpoint finds a 'pending' or 'in_progress' transfer for a given unit.
+    It then iterates through all associated documents and attempts to verify them.
+    This is a placeholder for a real-world process that might involve calling
+    external services to validate legal documents. If all documents are successfully
+    verified, their status is updated in the database.
+
+    Args:
+        payload (ValidationRequest): The validation request details, primarily the
+            unit ID to identify the transfer.
+        db (AsyncSession, optional): The database session dependency.
+            Defaults to Depends(get_db).
+        redis (Redis, optional): The Redis client dependency for caching.
+            Defaults to Depends(get_redis).
+
+    Raises:
+        HTTPException:
+            - 400 BAD REQUEST: If any document fails the verification process or
+              is already marked as not verified.
+            - 404 NOT FOUND: If no pending or in-progress transfer is found for
+              the specified unit.
+        HTTPException: 500 INTERNAL SERVER_ERROR for any other unexpected
+            errors during the validation process.
+
+    Returns:
+        dict: A dictionary with a "status" of "success" and the "transfer"
+              details upon successful validation.
+    """
     try:
         result=await transfer_validation(payload, db, redis)
         return{
