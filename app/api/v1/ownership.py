@@ -3,9 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 from app.db.database import get_db
 from app.core.redis_client import get_redis
-from app.schemas.ownership_schema import TransferRequest
+from app.schemas.ownership_schema import TransferRequest, ValidationRequest
 from app.services.ownership_service import process_transfer
 from app.services.portfolio_service import get_portfolio_data
+from app.services.validation_service import transfer_validation
 from fastapi import Query
 from uuid import UUID
 from datetime import date 
@@ -53,11 +54,15 @@ async def initiate_transfer(
     """
     try:
         result = await process_transfer(payload, db, redis)
-        return {"status": "success", "transfer": result}
+        return {
+            "status": "success", 
+            "transfer": result
+            }
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                            detail=str(e))
 
 @router.get("/owners/{owner_id}/portfolio")
 async def get_owner_portfolio(
@@ -104,12 +109,32 @@ async def get_owner_portfolio(
             to_date=to_date,
             status_filter=status_filter
         )
-        return portfolio
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-        else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        return {
+            "status": "success", 
+            "portfolio": portfolio
+            }
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                             detail=str(e))
     
+
+
+@router.post("/ownership/transfers/validate")
+async def validate_transfer(
+    payload: ValidationRequest,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis)
+):
+    try:
+        result=await transfer_validation(payload, db, redis)
+        return{
+            "status": "success",
+            "transfer": result
+        }
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                             detail=str(e))

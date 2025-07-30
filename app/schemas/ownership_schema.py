@@ -65,3 +65,7 @@ class TransferRequest(BaseModel):
                 "Total percentage being transferred must equal the total percentage being acquired by new owners."
             )
         return self
+    
+class ValidationRequest(BaseModel):
+    unit_id: UUID
+    transfer_id: open[UUID]=None
